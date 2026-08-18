@@ -6,6 +6,7 @@ CREATE TABLE `Church` (
     `logoUrl` TEXT NULL,
     `timeZone` VARCHAR(191) NOT NULL DEFAULT 'America/Monterrey',
     `defaultPhoneRegion` VARCHAR(191) NOT NULL DEFAULT 'MX',
+    `currencyCode` VARCHAR(191) NOT NULL DEFAULT 'MXN',
     `logoAssetId` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
@@ -161,6 +162,41 @@ CREATE TABLE `ServicePlan` (
     `updatedAt` DATETIME(3) NOT NULL,
 
     INDEX `ServicePlan_churchId_serviceAt_idx`(`churchId`, `serviceAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `OfferingClosure` (
+    `id` VARCHAR(191) NOT NULL,
+    `churchId` VARCHAR(191) NOT NULL,
+    `servicePlanId` VARCHAR(191) NOT NULL,
+    `amountMinor` BIGINT NOT NULL,
+    `currencyCode` VARCHAR(191) NOT NULL,
+    `note` VARCHAR(191) NULL,
+    `confirmedById` VARCHAR(191) NOT NULL,
+    `confirmedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `OfferingClosure_servicePlanId_key`(`servicePlanId`),
+    INDEX `OfferingClosure_churchId_confirmedAt_idx`(`churchId`, `confirmedAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `OfferingAuditEvent` (
+    `id` VARCHAR(191) NOT NULL,
+    `churchId` VARCHAR(191) NOT NULL,
+    `offeringClosureId` VARCHAR(191) NOT NULL,
+    `actorUserId` VARCHAR(191) NOT NULL,
+    `eventType` ENUM('CONFIRMED', 'CORRECTED') NOT NULL,
+    `previousAmountMinor` BIGINT NULL,
+    `newAmountMinor` BIGINT NOT NULL,
+    `reason` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `OfferingAuditEvent_churchId_createdAt_idx`(`churchId`, `createdAt`),
+    INDEX `OfferingAuditEvent_offeringClosureId_createdAt_idx`(`offeringClosureId`, `createdAt`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -672,6 +708,24 @@ ALTER TABLE `ServicePlan` ADD CONSTRAINT `ServicePlan_churchId_fkey` FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE `ServicePlan` ADD CONSTRAINT `ServicePlan_slideThemeId_fkey` FOREIGN KEY (`slideThemeId`) REFERENCES `SlideTheme`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `OfferingClosure` ADD CONSTRAINT `OfferingClosure_churchId_fkey` FOREIGN KEY (`churchId`) REFERENCES `Church`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `OfferingClosure` ADD CONSTRAINT `OfferingClosure_servicePlanId_fkey` FOREIGN KEY (`servicePlanId`) REFERENCES `ServicePlan`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `OfferingClosure` ADD CONSTRAINT `OfferingClosure_confirmedById_fkey` FOREIGN KEY (`confirmedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `OfferingAuditEvent` ADD CONSTRAINT `OfferingAuditEvent_churchId_fkey` FOREIGN KEY (`churchId`) REFERENCES `Church`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `OfferingAuditEvent` ADD CONSTRAINT `OfferingAuditEvent_offeringClosureId_fkey` FOREIGN KEY (`offeringClosureId`) REFERENCES `OfferingClosure`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `OfferingAuditEvent` ADD CONSTRAINT `OfferingAuditEvent_actorUserId_fkey` FOREIGN KEY (`actorUserId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `MinistryRole` ADD CONSTRAINT `MinistryRole_churchId_fkey` FOREIGN KEY (`churchId`) REFERENCES `Church`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

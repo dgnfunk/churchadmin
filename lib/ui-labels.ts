@@ -54,7 +54,7 @@ export const exportStatusLabels: Record<ExportStatus, string> = {
   CANCELLED: "Cancelado",
 };
 
-export type PermissionGroup = "Asistencia" | "Personas" | "Servicios" | "Multimedia" | "Comunicaciones" | "Programación" | "Administración";
+export type PermissionGroup = "Asistencia" | "Personas" | "Servicios" | "Multimedia" | "Comunicaciones" | "Ofrendas" | "Programación" | "Administración";
 
 export const permissionMetadata: Record<Permission, { group: PermissionGroup; label: string; description: string }> = {
   "attendance.checkin.manual": { group: "Asistencia", label: "Registrar asistencia", description: "Agregar registros manuales durante un servicio." },
@@ -74,6 +74,10 @@ export const permissionMetadata: Record<Permission, { group: PermissionGroup; la
   "communications.publish": { group: "Comunicaciones", label: "Publicar campañas", description: "Programar, cancelar y enviar publicaciones." },
   "communications.connections.manage": { group: "Comunicaciones", label: "Administrar conexiones", description: "Configurar cuentas y credenciales oficiales." },
   "communications.consent.manage": { group: "Comunicaciones", label: "Administrar consentimientos", description: "Registrar altas y bajas de WhatsApp." },
+  "offerings.capture": { group: "Ofrendas", label: "Capturar ofrendas", description: "Registrar cierres y consultar capturas propias del mes actual." },
+  "offerings.audit.view": { group: "Ofrendas", label: "Auditar ofrendas", description: "Ver historial, tendencias, auditoría y exportaciones sin modificar cierres." },
+  "offerings.view": { group: "Ofrendas", label: "Consultar ofrendas (anterior)", description: "Permiso anterior compatible con auditoría." },
+  "offerings.manage": { group: "Ofrendas", label: "Administrar ofrendas (anterior)", description: "Permiso anterior compatible con captura y auditoría." },
   "schedule.view.own": { group: "Programación", label: "Ver mi calendario", description: "Consultar asignaciones propias." },
   "schedule.propose": { group: "Programación", label: "Proponerse para servir", description: "Solicitar puestos compatibles disponibles." },
   "schedule.manage": { group: "Programación", label: "Coordinar equipos", description: "Asignar titulares, respaldos y publicar servicios." },

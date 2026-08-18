@@ -15,6 +15,7 @@ model Church {
   logoUrl                  String?                   @db.Text
   timeZone                 String                    @default("America/Monterrey")
   defaultPhoneRegion       String                    @default("MX")
+  currencyCode             String                    @default("MXN")
   logoAssetId              String?
   logoAsset                MediaAsset?               @relation("ChurchLogoAsset", fields: [logoAssetId], references: [id], onDelete: SetNull)
   theme                    ThemeSettings?
@@ -44,6 +45,8 @@ model Church {
   communicationAuditEvents CommunicationAuditEvent[]
   webhookEvents            WebhookEvent[]
   whatsappGroupCapability  WhatsAppGroupCapability?
+  offeringClosures         OfferingClosure[]
+  offeringAuditEvents      OfferingAuditEvent[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
 }
@@ -85,6 +88,8 @@ model User {
   communicationCampaigns   CommunicationCampaign[]
   campaignApprovals        CampaignApproval[]
   communicationAuditEvents CommunicationAuditEvent[]
+  confirmedOfferings       OfferingClosure[]         @relation("OfferingConfirmedBy")
+  offeringAuditEvents      OfferingAuditEvent[]      @relation("OfferingAuditActor")
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
 
@@ -226,6 +231,7 @@ model ServicePlan {
   slideTheme             SlideTheme?             @relation("ServicePlanSlideTheme", fields: [slideThemeId], references: [id], onDelete: SetNull)
   serviceSlots           ServiceSlot[]
   communicationCampaigns CommunicationCampaign[]
+  offeringClosure        OfferingClosure?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 
@@ -237,6 +243,48 @@ enum ServicePlanStatus {
   PUBLISHED
   COMPLETED
   CANCELLED
+}
+
+model OfferingClosure {
+  id            String               @id @default(cuid())
+  churchId      String
+  church        Church               @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  servicePlanId String               @unique
+  servicePlan   ServicePlan          @relation(fields: [servicePlanId], references: [id], onDelete: Restrict)
+  amountMinor   BigInt
+  currencyCode  String
+  note          String?
+  confirmedById String
+  confirmedBy   User                 @relation("OfferingConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt   DateTime             @default(now())
+  auditEvents   OfferingAuditEvent[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([churchId, confirmedAt])
+}
+
+enum OfferingAuditEventType {
+  CONFIRMED
+  CORRECTED
+}
+
+model OfferingAuditEvent {
+  id                  String                 @id @default(cuid())
+  churchId            String
+  church              Church                 @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  offeringClosureId   String
+  offeringClosure     OfferingClosure        @relation(fields: [offeringClosureId], references: [id], onDelete: Cascade)
+  actorUserId         String
+  actor               User                   @relation("OfferingAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  eventType           OfferingAuditEventType
+  previousAmountMinor BigInt?
+  newAmountMinor      BigInt
+  reason              String?
+  createdAt           DateTime               @default(now())
+
+  @@index([churchId, createdAt])
+  @@index([offeringClosureId, createdAt])
 }
 
 model MinistryRole {

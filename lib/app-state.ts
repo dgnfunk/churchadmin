@@ -59,6 +59,7 @@ export async function getInitialAppState(churchId?: string, user?: User | null):
         logoAssetId: church.logoAssetId ?? undefined,
         timeZone: church.timeZone
         ,defaultPhoneRegion: church.defaultPhoneRegion
+        ,currencyCode: church.currencyCode
       },
       theme: {
         churchId: church.theme.churchId,

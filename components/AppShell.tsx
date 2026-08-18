@@ -6,7 +6,7 @@ import { useAppState } from "@/components/AppStateProvider";
 import { logoutAction } from "@/lib/auth-actions";
 import type { Permission, User } from "@/lib/domain";
 import { canAccess } from "@/lib/permissions";
-import { CalendarDays, ChevronLeft, Church, House, Image, Megaphone, Menu, Palette, Users, UserRoundCog, X, type LucideIcon } from "lucide-react";
+import { Banknote, CalendarDays, ChevronLeft, Church, House, Image, Megaphone, Menu, Palette, Users, UserRoundCog, X, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { ColorModeToggle } from "@/components/ColorModeToggle";
 
@@ -22,6 +22,7 @@ const navItems: Array<{
   { href: "/people", label: "Personas", icon: Users, group: "Operación", permission: "people.view" },
   { href: "/media", label: "Multimedia", icon: Image, group: "Recursos", permission: "media.manage" },
   { href: "/communications", label: "Comunicaciones", icon: Megaphone, group: "Recursos", permission: "communications.view" },
+  { href: "/offerings", label: "Ofrendas", icon: Banknote, group: "Administración", permission: "offerings.audit.view" },
   { href: "/ministry", label: "Ministerios", icon: UserRoundCog, group: "Administración", permission: "ministry.manage" },
   { href: "/users", label: "Usuarios", icon: Users, group: "Administración", permission: "users.manage" },
   { href: "/theme", label: "Apariencia", icon: Palette, group: "Administración", permission: "theme.manage" },
@@ -44,6 +45,8 @@ export function AppShell({ children, currentUser }: { children: React.ReactNode;
     .join("") || "CA";
   const visibleNavItems = navItems.filter((item) => item.href === "/services"
     ? canAccess(currentUser, "services.view") || canAccess(currentUser, "schedule.view.own") || canAccess(currentUser, "schedule.propose")
+    : item.href === "/offerings"
+      ? canAccess(currentUser, "offerings.capture") || canAccess(currentUser, "offerings.audit.view")
     : !item.permission || canAccess(currentUser, item.permission));
 
   const isActive = (href: string) => href === "/" ? pathname === "/" : pathname.startsWith(href);

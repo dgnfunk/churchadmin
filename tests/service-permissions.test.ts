@@ -12,6 +12,11 @@ describe("temporary service permissions", () => {
     expect(assignmentGrantsPermission("BACKUP", ["media.manage"], "media.manage")).toBe(false);
   });
 
+  it("does not grant offering permissions through a service assignment", () => {
+    expect(assignmentGrantsPermission("PRIMARY", ["offerings.capture"], "offerings.capture")).toBe(false);
+    expect(assignmentGrantsPermission("BACKUP", ["offerings.audit.view"], "offerings.audit.view")).toBe(false);
+  });
+
   it("closes permissions after completion or twelve hours", () => {
     const now = new Date("2026-08-05T12:00:00Z");
     expect(servicePermissionWindowIsOpen("PUBLISHED", new Date("2026-08-05T01:00:01Z"), now)).toBe(true);

@@ -14,7 +14,8 @@ export const church: Church = {
   name: "Grace Community Church",
   slug: "grace-community",
   timeZone: "America/Monterrey",
-  defaultPhoneRegion: "MX"
+  defaultPhoneRegion: "MX",
+  currencyCode: "MXN"
 };
 
 export const theme: ThemeSettings = {

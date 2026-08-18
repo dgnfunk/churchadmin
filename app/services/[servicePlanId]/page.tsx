@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, CircleDashed, Clock3, FileOutput, ListChecks, QrCode, Share2, Users, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Banknote, CheckCircle2, CircleDashed, Clock3, FileOutput, ListChecks, QrCode, Share2, Users, type LucideIcon } from "lucide-react";
 import { ServicesClient } from "@/components/ServicesClient";
 import { ActionForm } from "@/components/ActionForm";
 import { PageHeader } from "@/components/PageHeader";
@@ -8,6 +8,8 @@ import { requireUser } from "@/lib/auth";
 import { listContentLibrary } from "@/lib/content-library-actions";
 import { getExportJobs } from "@/lib/export-actions";
 import { canAccess, hasServicePermission } from "@/lib/permissions";
+import { formatMoneyMinor } from "@/lib/offering-money";
+import { capturerCanViewOffering } from "@/lib/offering-reporting-core";
 import { prisma } from "@/lib/prisma";
 import { applySlotTemplatesAction, assignServiceSlotAction, promoteBackupAction, proposeForSlotAction, rejectProposalAction, respondToAssignmentAction, withdrawProposalAction } from "@/lib/schedule-actions";
 import { assignmentStatusLabels, formatServiceDate, serviceStatusLabels, type ServiceWorkspaceTab } from "@/lib/ui-labels";
@@ -38,12 +40,13 @@ export default async function ServiceWorkspacePage({ params, searchParams }: { p
       items: { orderBy: { sortOrder: "asc" } },
       serviceSlots: { include: { ministryRole: true, proposals: { include: { person: true }, orderBy: { createdAt: "asc" } }, assignments: { include: { person: true }, orderBy: { createdAt: "desc" } } }, orderBy: { sortOrder: "asc" } },
       exportJobs: { where: { status: "COMPLETE" }, select: { id: true }, take: 1 },
+      offeringClosure: { select: { amountMinor: true, currencyCode: true, confirmedById: true, confirmedAt: true } },
     },
   });
   if (!service) redirect("/services");
   if (!manages && !canAccess(user, "services.view") && service.status !== "PUBLISHED") redirect("/services?view=mine");
 
-  const church = await prisma.church.findUniqueOrThrow({ where: { id: user.churchId }, select: { timeZone: true } });
+  const church = await prisma.church.findUniqueOrThrow({ where: { id: user.churchId }, select: { timeZone: true, currencyCode: true } });
   const [people, templateCount] = manages ? await Promise.all([
     prisma.person.findMany({ where: { churchId: user.churchId, personType: "MEMBER", status: "ACTIVE" }, include: { ministryMemberships: { where: { isActive: true } } }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] }),
     prisma.serviceSlotTemplate.count({ where: { churchId: user.churchId, isActive: true } }),
@@ -52,6 +55,9 @@ export default async function ServiceWorkspacePage({ params, searchParams }: { p
   const canEditContent = canAccess(user, "services.content.edit") || await hasServicePermission(user, "services.content.edit", service.id);
   const canExport = canAccess(user, "services.export") || await hasServicePermission(user, "services.export", service.id);
   const canCheckIn = Boolean(service.attendanceSession) && (canAccess(user, "attendance.checkin.manual") || await hasServicePermission(user, "attendance.checkin.manual", service.id));
+  const canCaptureOfferings = canAccess(user, "offerings.capture");
+  const canAuditOfferings = canAccess(user, "offerings.audit.view");
+  const canViewOfferings = canCaptureOfferings || canAuditOfferings;
   if (tab === "contenido" && !canEditContent) redirect(`/services/${service.id}?tab=resumen`);
   if (tab === "exportaciones" && !canExport) redirect(`/services/${service.id}?tab=resumen`);
 
@@ -60,6 +66,9 @@ export default async function ServiceWorkspacePage({ params, searchParams }: { p
   const staffed = service.serviceSlots.filter((slot) => slot.assignments.some((assignment) => assignment.kind === "PRIMARY" && visibleAssignment(assignment.status))).length;
   const confirmed = service.serviceSlots.filter((slot) => slot.assignments.some((assignment) => assignment.kind === "PRIMARY" && assignment.status === "CONFIRMED")).length;
   const duration = service.items.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0);
+  const ownCurrentOffering = Boolean(service.offeringClosure && capturerCanViewOffering(service.offeringClosure.confirmedById, service.offeringClosure.confirmedAt, user.id, new Date(), church.timeZone));
+  const offeringValue = !service.offeringClosure ? "Sin captura" : canAuditOfferings || ownCurrentOffering ? formatMoneyMinor(service.offeringClosure.amountMinor, service.offeringClosure.currencyCode) : "Registrada";
+  const offeringHref = canAuditOfferings && service.offeringClosure ? "/offerings?view=history" : canCaptureOfferings ? `/offerings?view=capture&servicePlanId=${service.id}` : "/offerings?view=history";
 
   return <>
     <PageHeader title={service.title} subtitle={formatServiceDate(service.serviceAt, church.timeZone)} actions={<div className="actions"><span className={`status-badge status-${service.status.toLowerCase()}`}>{serviceStatusLabels[service.status]}</span>{canAccess(user, "communications.create") ? <Link className="button" href={`/communications?view=campaigns&servicePlanId=${service.id}#new-campaign`}><Share2 />Compartir grabación</Link> : null}{manages ? <ServiceStatusActions servicePlanId={service.id} status={service.status} /> : null}<Link className="button" href="/services">Volver a servicios</Link></div>} />
@@ -72,6 +81,7 @@ export default async function ServiceWorkspacePage({ params, searchParams }: { p
         <ReadinessCard icon={Users} title="Equipo" value={`${staffed}/${service.serviceSlots.length} puestos`} detail={`${confirmed} titulares confirmados`} ready={staffed === service.serviceSlots.length && staffed > 0} href={`/services/${service.id}?tab=equipo`} />
         <ReadinessCard icon={QrCode} title="Asistencia" value={service.attendanceSession ? service.attendanceSession.status === "OPEN" ? "Sesión abierta" : "Sesión cerrada" : "Sin sesión"} detail={canCheckIn ? "Registro manual disponible" : "Configura la sesión de asistencia"} ready={Boolean(service.attendanceSession)} href={`/services/${service.id}?tab=asistencia`} />
         <ReadinessCard icon={FileOutput} title="Exportaciones" value={service.exportJobs.length ? "Archivos listos" : "Sin exportar"} detail="PDF, imágenes y ProPresenter" ready={service.exportJobs.length > 0} href={canExport ? `/services/${service.id}?tab=exportaciones` : undefined} />
+        {canViewOfferings ? <ReadinessCard icon={Banknote} title="Ofrenda" value={offeringValue} detail={service.status === "COMPLETED" ? service.offeringClosure ? "Cierre confirmado" : "Pendiente de registrar" : "Disponible al completar"} ready={Boolean(service.offeringClosure)} href={offeringHref} /> : null}
       </div>
       <div className="summary-band"><div><h2>Siguientes acciones</h2><p>Resuelve los pendientes antes de publicar o comenzar el servicio.</p></div><div className="action-checklist">{!service.items.length ? <ActionWarning text="Agrega el orden y contenido del servicio." href={`/services/${service.id}?tab=contenido`} /> : null}{staffed < service.serviceSlots.length ? <ActionWarning text={`${service.serviceSlots.length - staffed} puestos todavía no tienen titular.`} href={`/services/${service.id}?tab=equipo`} /> : null}{service.status === "DRAFT" ? <ActionWarning text="Publica el servicio cuando el equipo deba confirmar." /> : null}{!service.attendanceSession ? <ActionWarning text="Crea o vincula una sesión de asistencia." href={`/services/${service.id}?tab=asistencia`} /> : null}{service.items.length && staffed === service.serviceSlots.length && service.status !== "DRAFT" && service.attendanceSession ? <p className="ready-message"><CheckCircle2 />El servicio tiene sus áreas principales preparadas.</p> : null}</div></div>
     </section> : null}

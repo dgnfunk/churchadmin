@@ -6,7 +6,9 @@ export type Permission =
   | "schedule.view.own" | "schedule.propose" | "schedule.manage" | "ministry.manage"
   | "theme.manage" | "users.manage"
   | "communications.view" | "communications.create" | "communications.approve" | "communications.publish"
-  | "communications.connections.manage" | "communications.consent.manage";
+  | "communications.connections.manage" | "communications.consent.manage"
+  | "offerings.capture" | "offerings.audit.view"
+  | "offerings.view" | "offerings.manage";
 export type PermissionScope = "attendance" | "services" | "theme" | "users";
 
 export type ThemeMode = "light" | "dark";
@@ -19,6 +21,7 @@ export interface Church {
   logoAssetId?: string;
   timeZone: string;
   defaultPhoneRegion: string;
+  currencyCode: string;
 }
 
 export interface ThemeSettings {
@@ -179,6 +182,26 @@ export interface ExportJob {
 }
 
 export type AttendanceTrendPeriod = "month" | "semester" | "year";
+
+export type OfferingTrendPeriod = "month" | "quarter" | "semester" | "year";
+
+export interface OfferingTrendPoint {
+  key: string;
+  label: string;
+  serviceCount: number;
+  capturedCount: number;
+  pendingCount: number;
+  amountMinor: string;
+}
+
+export interface OfferingTrendSummary {
+  totalAmountMinor: string;
+  averageAmountMinor: string;
+  peakAmountMinor: string;
+  capturedCount: number;
+  pendingCount: number;
+  changePercent?: number;
+}
 
 export interface AttendanceTrendPoint {
   key: string;

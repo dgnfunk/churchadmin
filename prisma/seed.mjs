@@ -150,6 +150,8 @@ const roleDefinitions = [
   { id: "role-demo-attendance", name: "Asistencia", description: "Registro manual de personas durante el servicio asignado.", color: "#d97706", basePermissions: [], servicePermissions: ["attendance.checkin.manual"], sortOrder: 4 },
   { id: "role-demo-media", name: "Audio y multimedia", description: "Operacion de audio y recursos multimedia del servicio.", color: "#64748b", basePermissions: [], servicePermissions: ["services.view", "media.manage"], sortOrder: 5 },
   { id: "role-demo-communications", name: "Comunicaciones", description: "Preparacion y programacion de anuncios oficiales.", color: "#be185d", basePermissions: ["communications.view", "communications.create", "communications.publish", "communications.consent.manage"], servicePermissions: [], sortOrder: 6 },
+  { id: "role-demo-treasury", name: "Tesorería", description: "Captura ofrendas y consulta unicamente sus registros del mes actual.", color: "#0f766e", basePermissions: ["offerings.capture"], servicePermissions: [], sortOrder: 7 },
+  { id: "role-demo-offering-auditor", name: "Auditor de ofrendas", description: "Consulta el historial financiero y su auditoria sin modificar cierres.", color: "#7c3aed", basePermissions: ["offerings.audit.view"], servicePermissions: [], sortOrder: 8 },
 ];
 
 const slotDefinitions = [
@@ -208,6 +210,8 @@ async function main() {
     ["diego", "role-demo-attendance"], ["paola", "role-demo-attendance"],
     ["luis", "role-demo-media"], ["fernanda", "role-demo-media"],
     ["fernanda", "role-demo-communications"],
+    ["diego", "role-demo-treasury"],
+    ["samuel", "role-demo-offering-auditor"],
   ];
   await prisma.ministryMembership.createMany({
     data: memberships.map(([personKey, ministryRoleId]) => ({ churchId: church.id, personId: memberId(personKey), ministryRoleId, isActive: true })),
@@ -219,6 +223,7 @@ async function main() {
       { id: "user-pastor", churchId: church.id, personId: memberId("samuel"), name: "Samuel Herrera", email: "samuel@grace.example", role: "MEMBER", passwordHash: hashPassword(memberPassword), isActive: true },
       { id: "user-member", churchId: church.id, personId: memberId("marco"), name: "Marco Santos", email: "marco@grace.example", role: "MEMBER", passwordHash: hashPassword(memberPassword), isActive: true },
       { id: "user-presenter", churchId: church.id, personId: memberId("andres"), name: "Andres Castillo", email: "andres@grace.example", role: "MEMBER", passwordHash: hashPassword(memberPassword), isActive: true },
+      { id: "user-treasury", churchId: church.id, personId: memberId("diego"), name: "Diego Navarro", email: "diego@grace.example", role: "MEMBER", passwordHash: hashPassword(memberPassword), isActive: true },
     ],
   });
 
@@ -263,6 +268,7 @@ async function main() {
   const scriptures = ["Hechos 2:42-47", "Romanos 12:9-13", "Marcos 10:42-45", "Josue 24:14-15", "1 Pedro 3:15-16", "2 Corintios 9:6-8", "Filipenses 4:6-7", "Juan 15:4-5", "Miqueas 6:8", "Efesios 2:10", "1 Tesalonicenses 5:16-18"];
   const memberCounts = [16, 18, 17, 20, 19, 21, 22, 20, 24, 23];
   const visitorCounts = [1, 2, 1, 3, 2, 4, 3, 5, 4, 6];
+  const offeringAmounts = [185000, 192500, 178000, 211250, 205000, 234500, 226000, 248750, 239000, 267500];
   const latestSunday = latestCompletedSunday();
   const serviceDates = Array.from({ length: 10 }, (_, index) => new Date(latestSunday.getTime() - (9 - index) * WEEK_MS));
   serviceDates.push(new Date(latestSunday.getTime() + WEEK_MS));
@@ -324,6 +330,22 @@ async function main() {
           notes: attendeeIndex === 0 && index % 3 === 0 ? "Registro realizado por el equipo de bienvenida." : null,
         })),
       });
+      if (index !== 8) {
+        const originalAmount = BigInt(offeringAmounts[index]);
+        const correctedAmount = index === 4 ? originalAmount + 5000n : originalAmount;
+        const confirmedAt = new Date(serviceAt.getTime() + 2 * 60 * 60 * 1000);
+        await prisma.offeringClosure.create({
+          data: {
+            id: `demo-offering-${key}`, churchId: church.id, servicePlanId, amountMinor: correctedAmount,
+            currencyCode: "MXN", note: index % 3 === 0 ? "Cierre contado y confirmado por tesorería." : null,
+            confirmedById: "user-admin", confirmedAt,
+            auditEvents: { create: [
+              { churchId: church.id, actorUserId: "user-admin", eventType: "CONFIRMED", newAmountMinor: originalAmount, createdAt: confirmedAt },
+              ...(index === 4 ? [{ churchId: church.id, actorUserId: "user-admin", eventType: "CORRECTED", previousAmountMinor: originalAmount, newAmountMinor: correctedAmount, reason: "Se agregó una transferencia recibida después del conteo inicial.", createdAt: new Date(confirmedAt.getTime() + 30 * 60 * 1000) }] : []),
+            ] },
+          },
+        });
+      }
     }
   }
 
@@ -338,12 +360,13 @@ async function main() {
     church: church.name,
     services: serviceDates.length,
     completedServices: serviceDates.length - 1,
+    confirmedOfferings: offeringAmounts.length - 1,
     people: people.length,
     members: members.length,
     visitors: visitors.length,
     mediaAssets: 0,
     adminLogin: "elena@grace.example",
-    memberLogins: ["samuel@grace.example", "marco@grace.example", "andres@grace.example"],
+    memberLogins: ["samuel@grace.example", "marco@grace.example", "andres@grace.example", "diego@grace.example"],
   };
   console.log("Demo seed complete:", summary);
 }

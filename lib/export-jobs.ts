@@ -200,7 +200,7 @@ export async function generateProPresenterPackage(jobId: string) {
     return serializeJob(cancelled);
   }
   const plan = serializeServicePlan(job.servicePlan);
-  const church = { id: job.church.id, name: job.church.name, slug: job.church.slug, logoUrl: job.church.logoUrl ?? undefined, logoAssetId: job.church.logoAssetId ?? undefined, timeZone: job.church.timeZone, defaultPhoneRegion: job.church.defaultPhoneRegion };
+  const church = { id: job.church.id, name: job.church.name, slug: job.church.slug, logoUrl: job.church.logoUrl ?? undefined, logoAssetId: job.church.logoAssetId ?? undefined, timeZone: job.church.timeZone, defaultPhoneRegion: job.church.defaultPhoneRegion, currencyCode: job.church.currencyCode };
   const theme = themeFromRow(job.church.theme);
   const slideThemes: SlideTheme[] = job.church.slideThemes.map((slideTheme) => ({
     id: slideTheme.id, churchId: slideTheme.churchId, name: slideTheme.name, isDefault: slideTheme.isDefault,

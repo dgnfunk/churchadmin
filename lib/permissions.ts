@@ -7,7 +7,8 @@ export const permissions: Permission[] = [
   "people.view", "people.manage", "services.view", "services.content.edit", "services.present", "services.export",
   "media.manage", "schedule.view.own", "schedule.propose", "schedule.manage", "ministry.manage", "theme.manage", "users.manage",
   "communications.view", "communications.create", "communications.approve", "communications.publish",
-  "communications.connections.manage", "communications.consent.manage"
+  "communications.connections.manage", "communications.consent.manage",
+  "offerings.capture", "offerings.audit.view"
 ];
 
 const legacyScopePermission: Record<PermissionScope, Permission> = {
@@ -19,7 +20,20 @@ export function canAccess(user: User, permission: Permission | PermissionScope):
     return true;
   }
   const resolved = permission.includes(".") ? permission as Permission : legacyScopePermission[permission as PermissionScope];
+  if (resolved === "offerings.capture") return user.permissions.includes("offerings.capture") || user.permissions.includes("offerings.manage");
+  if (resolved === "offerings.audit.view") return user.permissions.includes("offerings.audit.view") || user.permissions.includes("offerings.view") || user.permissions.includes("offerings.manage");
+  if (resolved === "offerings.view") return user.permissions.includes("offerings.audit.view") || user.permissions.includes("offerings.view") || user.permissions.includes("offerings.manage");
   return user.permissions.includes(resolved);
+}
+
+export function normalizedPermanentPermissions(values: string[]): Permission[] {
+  const normalized = new Set(values as Permission[]);
+  if (normalized.delete("offerings.view")) normalized.add("offerings.audit.view");
+  if (normalized.delete("offerings.manage")) {
+    normalized.add("offerings.capture");
+    normalized.add("offerings.audit.view");
+  }
+  return [...normalized];
 }
 
 export function assertAccess(user: User, scope: PermissionScope): void {
@@ -29,6 +43,7 @@ export function assertAccess(user: User, scope: PermissionScope): void {
 }
 
 export function assignmentGrantsPermission(kind: "PRIMARY" | "BACKUP", servicePermissions: string[], permission: Permission) {
+  if (permission.startsWith("offerings.")) return false;
   return kind === "BACKUP" ? permission === "services.view" : servicePermissions.includes(permission);
 }
 

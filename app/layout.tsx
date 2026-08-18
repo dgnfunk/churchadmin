@@ -33,7 +33,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       style={themeToCssVariables(initialState.theme) as React.CSSProperties}
       suppressHydrationWarning
     >
-      <head><script dangerouslySetInnerHTML={{ __html: `try{const m=localStorage.getItem("churchadmin-color-mode");if(m==="light"||m==="dark"){document.documentElement.dataset.colorMode=m;document.documentElement.style.colorScheme=m}}catch{}` }} /></head>
+      <head>
+        <meta name="darkreader-lock" />
+        <script dangerouslySetInnerHTML={{ __html: `try{const m=localStorage.getItem("churchadmin-color-mode");if(m==="light"||m==="dark"){document.documentElement.dataset.colorMode=m;document.documentElement.style.colorScheme=m}}catch{}` }} />
+      </head>
       <body>
         <AppStateProvider initialState={initialState}>
           <PwaRegister />
