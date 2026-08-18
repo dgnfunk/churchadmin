@@ -1,0 +1,116 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: churchadmin
+      POSTGRES_USER: churchadmin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U churchadmin -d churchadmin"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://churchadmin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/churchadmin?schema=public
+      CHURCH_SLUG: ${CHURCH_SLUG:-grace-community}
+      PASSWORD_SECRET: ${PASSWORD_SECRET}
+      ATTENDEE_SESSION_SECRET: ${ATTENDEE_SESSION_SECRET}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL}
+      MEDIA_STORAGE_PATH: /data/media
+      EXPORT_STORAGE_PATH: /data/exports
+      MAX_MEDIA_BYTES: ${MAX_MEDIA_BYTES:-2147483648}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      SEED_MEMBER_PASSWORD: ${SEED_MEMBER_PASSWORD}
+      EXPORT_WORKER_IN_APP: "false"
+      COMMUNICATIONS_WORKER_IN_APP: "false"
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
+      META_APP_ID: ${META_APP_ID}
+      META_APP_SECRET: ${META_APP_SECRET}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
+      META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
+      SOCIAL_CREDENTIALS_KEY: ${SOCIAL_CREDENTIALS_KEY}
+    volumes:
+      - ./data/media:/data/media
+      - ./data/exports:/data/exports
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  export-worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npm", "run", "worker:exports"]
+    environment:
+      DATABASE_URL: postgresql://churchadmin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/churchadmin?schema=public
+      PASSWORD_SECRET: ${PASSWORD_SECRET}
+      ATTENDEE_SESSION_SECRET: ${ATTENDEE_SESSION_SECRET}
+      MEDIA_STORAGE_PATH: /data/media
+      EXPORT_STORAGE_PATH: /data/exports
+    volumes:
+      - ./data/media:/data/media
+      - ./data/exports:/data/exports
+
+  communications-worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npm", "run", "worker:communications"]
+    environment:
+      DATABASE_URL: postgresql://churchadmin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/churchadmin?schema=public
+      SOCIAL_CREDENTIALS_KEY: ${SOCIAL_CREDENTIALS_KEY}
+      META_APP_SECRET: ${META_APP_SECRET}
+      META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      BACKUP_STORAGE_PATH: /backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    command: ["sh", "/scripts/backup-container.sh"]
+    volumes:
+      - ./scripts/backup-container.sh:/scripts/backup-container.sh:ro
+      - ./data:/data:ro
+      - ${BACKUP_STORAGE_PATH:-./backups}:/backups
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+      - ./data/caddy-config:/config
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST}

@@ -1,0 +1,876 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Church {
+  id                       String                    @id @default(cuid())
+  name                     String
+  slug                     String                    @unique
+  logoUrl                  String?
+  timeZone                 String                    @default("America/Monterrey")
+  defaultPhoneRegion       String                    @default("MX")
+  logoAssetId              String?
+  logoAsset                MediaAsset?               @relation("ChurchLogoAsset", fields: [logoAssetId], references: [id], onDelete: SetNull)
+  theme                    ThemeSettings?
+  users                    User[]
+  people                   Person[]
+  attendanceSessions       AttendanceSession[]
+  servicePlans             ServicePlan[]
+  exportJobs               ExportJob[]
+  mediaAssets              MediaAsset[]
+  slideThemes              SlideTheme[]
+  contentLibrary           ContentLibraryItem[]
+  rateLimitBuckets         RateLimitBucket[]
+  uploadSessions           UploadSession[]
+  attendeeSessions         AttendeeSession[]
+  ministryRoles            MinistryRole[]
+  slotTemplates            ServiceSlotTemplate[]
+  serviceSlots             ServiceSlot[]
+  scheduleProposals        ScheduleProposal[]
+  serviceAssignments       ServiceAssignment[]
+  notifications            Notification[]
+  socialConnections        SocialConnection[]
+  communicationConsents    CommunicationConsent[]
+  communicationAudiences   CommunicationAudience[]
+  communicationTemplates   CommunicationTemplate[]
+  communicationCampaigns   CommunicationCampaign[]
+  campaignDeliveries       CampaignDelivery[]
+  communicationAuditEvents CommunicationAuditEvent[]
+  webhookEvents            WebhookEvent[]
+  whatsappGroupCapability  WhatsAppGroupCapability?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+}
+
+model ThemeSettings {
+  id                    String   @id @default(cuid())
+  churchId              String   @unique
+  church                Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  primaryColor          String   @default("#0f766e")
+  accentColor           String   @default("#d69e2e")
+  mode                  String   @default("light")
+  logoUrl               String?
+  headingStyle          String   @default("classic")
+  exportHeader          String   @default("branded")
+  slideTemplate         String   @default("centered")
+  songLinesPerSlide     Int      @default(2)
+  textLinesPerSlide     Int      @default(4)
+  maxCharactersPerSlide Int      @default(180)
+  defaultSlideWidth     Int      @default(1920)
+  defaultSlideHeight    Int      @default(1080)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model User {
+  id                       String                    @id @default(cuid())
+  churchId                 String
+  church                   Church                    @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name                     String
+  email                    String
+  passwordHash             String?
+  role                     Role                      @default(MEMBER)
+  personId                 String?                   @unique
+  person                   Person?                   @relation(fields: [personId], references: [id], onDelete: SetNull)
+  isActive                 Boolean                   @default(true)
+  mustChangePassword       Boolean                   @default(false)
+  sessions                 Session[]
+  notifications            Notification[]
+  communicationCampaigns   CommunicationCampaign[]
+  campaignApprovals        CampaignApproval[]
+  communicationAuditEvents CommunicationAuditEvent[]
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+
+  @@unique([churchId, email])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+model Person {
+  id                    String                 @id @default(cuid())
+  churchId              String
+  church                Church                 @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  personType            PersonType
+  status                PersonStatus           @default(ACTIVE)
+  firstName             String
+  lastName              String
+  email                 String?
+  phone                 String?
+  normalizedEmail       String?
+  normalizedPhone       String?
+  familyNotes           String?
+  tags                  String[]               @default([])
+  attendance            AttendanceRecord[]
+  attendeeSessions      AttendeeSession[]
+  user                  User?
+  ministryMemberships   MinistryMembership[]
+  scheduleProposals     ScheduleProposal[]
+  serviceAssignments    ServiceAssignment[]
+  communicationConsents CommunicationConsent[]
+  campaignDeliveries    CampaignDelivery[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@index([churchId, personType])
+  @@index([churchId, normalizedEmail])
+  @@index([churchId, normalizedPhone])
+}
+
+enum PersonType {
+  MEMBER
+  VISITOR
+}
+
+enum PersonStatus {
+  ACTIVE
+  INACTIVE
+  FOLLOW_UP
+}
+
+model AttendanceSession {
+  id            String                  @id @default(cuid())
+  churchId      String
+  church        Church                  @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  title         String
+  serviceAt     DateTime
+  qrToken       String                  @unique
+  manualCode    String                  @unique
+  status        AttendanceSessionStatus @default(OPEN)
+  expiresAt     DateTime?
+  closedAt      DateTime?
+  records       AttendanceRecord[]
+  servicePlanId String?                 @unique
+  servicePlan   ServicePlan?            @relation(fields: [servicePlanId], references: [id], onDelete: SetNull)
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@index([churchId, serviceAt])
+}
+
+enum AttendanceSessionStatus {
+  OPEN
+  CLOSED
+}
+
+model AttendanceRecord {
+  id          String            @id @default(cuid())
+  sessionId   String
+  session     AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  personId    String
+  person      Person            @relation(fields: [personId], references: [id], onDelete: Cascade)
+  source      AttendanceSource
+  checkedInAt DateTime          @default(now())
+  notes       String?
+
+  @@unique([sessionId, personId])
+}
+
+enum AttendanceSource {
+  MANUAL
+  QR
+}
+
+model AttendeeSession {
+  id         String    @id @default(cuid())
+  churchId   String
+  church     Church    @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  personId   String
+  person     Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  lastUsedAt DateTime  @default(now())
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([churchId, expiresAt])
+  @@index([personId])
+}
+
+model ServicePlan {
+  id                     String                  @id @default(cuid())
+  churchId               String
+  church                 Church                  @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  title                  String
+  topic                  String?
+  serviceAt              DateTime
+  status                 ServicePlanStatus       @default(DRAFT)
+  publishedAt            DateTime?
+  completedAt            DateTime?
+  items                  ServiceItem[]
+  attendanceSession      AttendanceSession?
+  exportJobs             ExportJob[]
+  slideThemeId           String?
+  slideTheme             SlideTheme?             @relation("ServicePlanSlideTheme", fields: [slideThemeId], references: [id], onDelete: SetNull)
+  serviceSlots           ServiceSlot[]
+  communicationCampaigns CommunicationCampaign[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  @@index([churchId, serviceAt])
+}
+
+enum ServicePlanStatus {
+  DRAFT
+  PUBLISHED
+  COMPLETED
+  CANCELLED
+}
+
+model MinistryRole {
+  id                 String                @id @default(cuid())
+  churchId           String
+  church             Church                @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name               String
+  description        String?
+  color              String                @default("#0f766e")
+  basePermissions    String[]              @default([])
+  servicePermissions String[]              @default([])
+  isActive           Boolean               @default(true)
+  sortOrder          Int                   @default(0)
+  memberships        MinistryMembership[]
+  slotTemplates      ServiceSlotTemplate[]
+  serviceSlots       ServiceSlot[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@unique([churchId, name])
+  @@index([churchId, isActive, sortOrder])
+}
+
+model MinistryMembership {
+  id             String       @id @default(cuid())
+  churchId       String
+  personId       String
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  ministryRoleId String
+  ministryRole   MinistryRole @relation(fields: [ministryRoleId], references: [id], onDelete: Cascade)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  @@unique([personId, ministryRoleId])
+  @@index([churchId, isActive])
+}
+
+model ServiceSlotTemplate {
+  id             String       @id @default(cuid())
+  churchId       String
+  church         Church       @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name           String
+  ministryRoleId String
+  ministryRole   MinistryRole @relation(fields: [ministryRoleId], references: [id], onDelete: Cascade)
+  sortOrder      Int          @default(0)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  @@unique([churchId, name])
+  @@index([churchId, isActive, sortOrder])
+}
+
+model ServiceSlot {
+  id             String              @id @default(cuid())
+  churchId       String
+  church         Church              @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  servicePlanId  String
+  servicePlan    ServicePlan         @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+  ministryRoleId String
+  ministryRole   MinistryRole        @relation(fields: [ministryRoleId], references: [id], onDelete: Restrict)
+  name           String
+  sortOrder      Int                 @default(0)
+  proposals      ScheduleProposal[]
+  assignments    ServiceAssignment[]
+  createdAt      DateTime            @default(now())
+
+  @@unique([servicePlanId, name])
+  @@index([churchId, servicePlanId, sortOrder])
+}
+
+model ScheduleProposal {
+  id            String                 @id @default(cuid())
+  churchId      String
+  church        Church                 @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  serviceSlotId String
+  serviceSlot   ServiceSlot            @relation(fields: [serviceSlotId], references: [id], onDelete: Cascade)
+  personId      String
+  person        Person                 @relation(fields: [personId], references: [id], onDelete: Cascade)
+  status        ScheduleProposalStatus @default(PENDING)
+  notes         String?
+  reviewedAt    DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@unique([serviceSlotId, personId])
+  @@index([churchId, status, createdAt])
+}
+
+enum ScheduleProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+model ServiceAssignment {
+  id            String                  @id @default(cuid())
+  churchId      String
+  church        Church                  @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  serviceSlotId String
+  serviceSlot   ServiceSlot             @relation(fields: [serviceSlotId], references: [id], onDelete: Cascade)
+  personId      String
+  person        Person                  @relation(fields: [personId], references: [id], onDelete: Cascade)
+  kind          ServiceAssignmentKind
+  status        ServiceAssignmentStatus @default(PENDING_CONFIRMATION)
+  confirmedAt   DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@index([churchId, status])
+  @@index([serviceSlotId, kind, status])
+  @@index([personId, status])
+}
+
+enum ServiceAssignmentKind {
+  PRIMARY
+  BACKUP
+}
+
+enum ServiceAssignmentStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  DECLINED
+  REPLACED
+  COMPLETED
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  churchId  String
+  church    Church    @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
+
+model ServiceItem {
+  id              String          @id @default(cuid())
+  servicePlanId   String
+  servicePlan     ServicePlan     @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+  type            ServiceItemType
+  title           String
+  body            String
+  notes           String?
+  durationMinutes Int?
+  sortOrder       Int
+  exportTags      ExportTag[]     @default([])
+  mediaAssets     MediaAsset[]
+  slideThemeId    String?
+  slideTheme      SlideTheme?     @relation("ServiceItemSlideTheme", fields: [slideThemeId], references: [id], onDelete: SetNull)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([servicePlanId, sortOrder])
+}
+
+enum ServiceItemType {
+  SONG
+  SCRIPTURE
+  ANNOUNCEMENT
+  SERMON_NOTE
+  PRAYER
+  MEDIA_CUE
+  CUSTOM_TEXT
+}
+
+enum ExportTag {
+  SLIDE
+  PDF
+  INTERNAL
+}
+
+model MediaAsset {
+  id            String         @id @default(cuid())
+  churchId      String
+  church        Church         @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  serviceItemId String?
+  serviceItem   ServiceItem?   @relation(fields: [serviceItemId], references: [id], onDelete: Cascade)
+  slideThemes   SlideTheme[]   @relation("SlideThemeBackground")
+  logoChurches  Church[]       @relation("ChurchLogoAsset")
+  role          MediaAssetRole @default(PRIMARY)
+  originalName  String
+  storageKey    String         @unique
+  mimeType      String
+  sizeBytes     BigInt
+  checksum      String
+  createdAt     DateTime       @default(now())
+
+  @@index([churchId, serviceItemId])
+}
+
+model SlideTheme {
+  id                String              @id @default(cuid())
+  churchId          String
+  church            Church              @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name              String
+  isDefault         Boolean             @default(false)
+  backgroundType    SlideBackgroundType @default(COLOR)
+  backgroundColor   String              @default("#0f766e")
+  backgroundAssetId String?
+  backgroundAsset   MediaAsset?         @relation("SlideThemeBackground", fields: [backgroundAssetId], references: [id], onDelete: SetNull)
+  overlayColor      String              @default("#102421")
+  overlayOpacity    Int                 @default(36)
+  textColor         String              @default("#ffffff")
+  accentColor       String              @default("#d69e2e")
+  layout            SlideThemeLayout    @default(CENTERED)
+  fontFamily        SlideFontFamily     @default(INTER)
+  titleFontSize     Int                 @default(82)
+  bodyFontSize      Int                 @default(46)
+  fontWeight        Int                 @default(700)
+  safeMargin        Int                 @default(96)
+  logoPlacement     SlideLogoPlacement  @default(TOP_LEFT)
+  servicePlans      ServicePlan[]       @relation("ServicePlanSlideTheme")
+  serviceItems      ServiceItem[]       @relation("ServiceItemSlideTheme")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([churchId, name])
+  @@index([churchId, isDefault])
+}
+
+enum SlideFontFamily {
+  INTER
+  ARIAL
+  GEORGIA
+}
+
+enum SlideLogoPlacement {
+  NONE
+  TOP_LEFT
+  TOP_RIGHT
+  BOTTOM_LEFT
+  BOTTOM_RIGHT
+}
+
+enum SlideBackgroundType {
+  COLOR
+  IMAGE
+}
+
+enum SlideThemeLayout {
+  CENTERED
+  LOWER_THIRD
+}
+
+enum MediaAssetRole {
+  PRIMARY
+  BACKGROUND
+  AUDIO
+  REFERENCE
+}
+
+model ExportJob {
+  id              String       @id @default(cuid())
+  churchId        String
+  church          Church       @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  servicePlanId   String?
+  servicePlan     ServicePlan? @relation(fields: [servicePlanId], references: [id], onDelete: SetNull)
+  kind            ExportKind
+  status          ExportStatus @default(PENDING)
+  fileUrl         String?
+  fileName        String?
+  sizeBytes       BigInt?
+  errorMessage    String?
+  expiresAt       DateTime?
+  width           Int?
+  height          Int?
+  renderOptions   Json?
+  progress        Int          @default(0)
+  attempts        Int          @default(0)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  lockedAt        DateTime?
+  cancelRequested Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+enum ExportKind {
+  SLIDE_IMAGES
+  TEXT_PDF
+  RUN_SHEET_PDF
+  PROPRESENTER_PACKAGE
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETE
+  FAILED
+  CANCELLED
+}
+
+model RateLimitBucket {
+  id          String   @id @default(cuid())
+  churchId    String
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  action      String
+  keyHash     String
+  windowStart DateTime
+  count       Int      @default(1)
+  expiresAt   DateTime
+
+  @@unique([action, keyHash, windowStart])
+  @@index([churchId, expiresAt])
+}
+
+model ContentLibraryItem {
+  id              String          @id @default(cuid())
+  churchId        String
+  church          Church          @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  type            ServiceItemType
+  title           String
+  normalizedTitle String
+  body            String
+  notes           String?
+  exportTags      ExportTag[]     @default([])
+  lastUsedAt      DateTime?
+  archivedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([churchId, type, normalizedTitle])
+  @@index([churchId, archivedAt, title])
+}
+
+model UploadSession {
+  id           String    @id
+  churchId     String
+  church       Church    @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  userId       String
+  purpose      String
+  originalName String
+  mimeType     String
+  sizeBytes    BigInt
+  offsetBytes  BigInt    @default(0)
+  storageKey   String
+  metadata     Json?
+  expiresAt    DateTime
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([churchId, expiresAt])
+}
+
+enum CommunicationChannel {
+  WHATSAPP
+  FACEBOOK
+  INSTAGRAM
+}
+
+enum SocialProvider {
+  WHATSAPP
+  FACEBOOK
+  INSTAGRAM
+}
+
+enum SocialConnectionStatus {
+  DISCONNECTED
+  CONNECTED
+  EXPIRED
+  ERROR
+  SUSPENDED
+}
+
+enum CommunicationConsentStatus {
+  OPTED_IN
+  OPTED_OUT
+  PENDING
+}
+
+enum CommunicationTemplateStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PAUSED
+  DISABLED
+}
+
+enum CommunicationTemplateCategory {
+  MARKETING
+  UTILITY
+  AUTHENTICATION
+}
+
+enum CommunicationApprovalMode {
+  AUTOMATIC
+  REQUIRED
+}
+
+enum CommunicationCampaignStatus {
+  DRAFT
+  WAITING_APPROVAL
+  SCHEDULED
+  PROCESSING
+  PARTIAL
+  COMPLETE
+  FAILED
+  CANCELLED
+}
+
+enum CampaignDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  SKIPPED
+  CANCELLED
+}
+
+enum WhatsAppGroupCapabilityStatus {
+  NOT_CHECKED
+  INELIGIBLE
+  ELIGIBLE
+  CONNECTED
+  SUSPENDED
+}
+
+model SocialConnection {
+  id                   String                 @id @default(cuid())
+  churchId             String
+  church               Church                 @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  provider             SocialProvider
+  externalAccountId    String
+  displayName          String
+  encryptedCredentials String?
+  metadata             Json?
+  grantedScopes        String[]               @default([])
+  status               SocialConnectionStatus @default(DISCONNECTED)
+  expiresAt            DateTime?
+  verifiedAt           DateTime?
+  lastError            String?
+  deliveries           CampaignDelivery[]
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@unique([churchId, provider, externalAccountId])
+  @@index([churchId, provider, status])
+}
+
+model CommunicationConsent {
+  id                  String                     @id @default(cuid())
+  churchId            String
+  church              Church                     @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  personId            String
+  person              Person                     @relation(fields: [personId], references: [id], onDelete: Cascade)
+  channel             CommunicationChannel
+  normalizedRecipient String
+  status              CommunicationConsentStatus @default(PENDING)
+  source              String
+  evidence            String?
+  optedInAt           DateTime?
+  optedOutAt          DateTime?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  @@unique([churchId, personId, channel])
+  @@index([churchId, channel, status])
+  @@index([churchId, normalizedRecipient])
+}
+
+model CommunicationAudience {
+  id          String                  @id @default(cuid())
+  churchId    String
+  church      Church                  @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  criteria    Json
+  isActive    Boolean                 @default(true)
+  campaigns   CommunicationCampaign[]
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@unique([churchId, name])
+  @@index([churchId, isActive])
+}
+
+model CommunicationTemplate {
+  id                 String                        @id @default(cuid())
+  churchId           String
+  church             Church                        @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name               String
+  channels           CommunicationChannel[]        @default([])
+  language           String                        @default("es_MX")
+  category           CommunicationTemplateCategory @default(MARKETING)
+  status             CommunicationTemplateStatus   @default(DRAFT)
+  approvalMode       CommunicationApprovalMode     @default(REQUIRED)
+  content            Json
+  defaultSchedule    Json?
+  remoteTemplateId   String?
+  remoteTemplateName String?
+  rejectionReason    String?
+  lastSyncedAt       DateTime?
+  campaigns          CommunicationCampaign[]
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+
+  @@unique([churchId, name])
+  @@index([churchId, status])
+}
+
+model CommunicationCampaign {
+  id                  String                      @id @default(cuid())
+  churchId            String
+  church              Church                      @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  servicePlanId       String?
+  servicePlan         ServicePlan?                @relation(fields: [servicePlanId], references: [id], onDelete: SetNull)
+  templateId          String?
+  template            CommunicationTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  audienceId          String?
+  audience            CommunicationAudience?      @relation(fields: [audienceId], references: [id], onDelete: SetNull)
+  createdByUserId     String
+  createdBy           User                        @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  title               String
+  sourceUrl           String
+  youtubeVideoId      String
+  youtubeTitle        String
+  youtubeDescription  String?
+  youtubeChannel      String?
+  youtubeThumbnailUrl String?
+  content             Json
+  status              CommunicationCampaignStatus @default(DRAFT)
+  approvalMode        CommunicationApprovalMode   @default(REQUIRED)
+  scheduledAt         DateTime?
+  relativeDayOffset   Int?
+  relativeLocalTime   String?
+  contentVersion      Int                         @default(1)
+  approvedVersion     Int?
+  deliveries          CampaignDelivery[]
+  approvals           CampaignApproval[]
+  auditEvents         CommunicationAuditEvent[]
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+
+  @@index([churchId, status, scheduledAt])
+  @@index([servicePlanId])
+}
+
+model CampaignDelivery {
+  id                String                 @id @default(cuid())
+  churchId          String
+  church            Church                 @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  campaignId        String
+  campaign          CommunicationCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  channel           CommunicationChannel
+  connectionId      String?
+  connection        SocialConnection?      @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  personId          String?
+  person            Person?                @relation(fields: [personId], references: [id], onDelete: SetNull)
+  recipientKey      String
+  recipientName     String?
+  content           Json
+  scheduledAt       DateTime
+  status            CampaignDeliveryStatus @default(PENDING)
+  attempts          Int                    @default(0)
+  lockedAt          DateTime?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedAt          DateTime?
+  externalMessageId String?
+  externalPostUrl   String?
+  errorCode         String?
+  errorMessage      String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@unique([campaignId, channel, recipientKey])
+  @@index([churchId, status, scheduledAt])
+  @@index([externalMessageId])
+}
+
+model CampaignApproval {
+  id             String                @id @default(cuid())
+  campaignId     String
+  campaign       CommunicationCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  approvedById   String
+  approvedBy     User                  @relation(fields: [approvedById], references: [id], onDelete: Restrict)
+  contentVersion Int
+  createdAt      DateTime              @default(now())
+
+  @@unique([campaignId, contentVersion])
+  @@index([approvedById, createdAt])
+}
+
+model CommunicationAuditEvent {
+  id          String                 @id @default(cuid())
+  churchId    String
+  church      Church                 @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  campaignId  String?
+  campaign    CommunicationCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  actorUserId String?
+  actor       User?                  @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  eventType   String
+  metadata    Json?
+  createdAt   DateTime               @default(now())
+
+  @@index([churchId, createdAt])
+  @@index([campaignId, createdAt])
+}
+
+model WebhookEvent {
+  id           String         @id @default(cuid())
+  churchId     String?
+  church       Church?        @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  provider     SocialProvider
+  externalId   String
+  payloadHash  String
+  processedAt  DateTime?
+  errorMessage String?
+  createdAt    DateTime       @default(now())
+
+  @@unique([provider, externalId])
+  @@index([churchId, createdAt])
+}
+
+model WhatsAppGroupCapability {
+  id        String                        @id @default(cuid())
+  churchId  String                        @unique
+  church    Church                        @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  status    WhatsAppGroupCapabilityStatus @default(NOT_CHECKED)
+  checkedAt DateTime?
+  metadata  Json?
+  lastError String?
+  createdAt DateTime                      @default(now())
+  updatedAt DateTime                      @updatedAt
+}

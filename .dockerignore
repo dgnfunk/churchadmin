@@ -1,0 +1,10 @@
+node_modules
+.next
+.tmp
+data
+backups
+.env
+*.pptx
+*.pdf
+outputs
+ChurchAdmin_Tutorial_Modulos

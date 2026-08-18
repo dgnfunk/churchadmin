@@ -1,0 +1,24 @@
+.next
+node_modules
+coverage
+dist
+.DS_Store
+.playwright-mcp/
+.env
+.tmp/
+data/
+backups/
+.env.local
+*.log
+tsconfig.tsbuildinfo
+
+# Generated distribution bundles and working exports
+dist-hosting/
+output/
+outputs/
+
+# Generated tutorial/proposal artifacts (source generators remain tracked)
+ChurchAdmin_Tutorial_Modulos/
+ChurchAdmin_Tutorial_Modulos*.pptx
+ChurchAdmin_Tutorial_Modulos*.inspect.ndjson
+propuesta_estabilidad_video_iglesia*.pdf
