@@ -14,7 +14,9 @@ It is built with Next.js, React, Prisma, and PostgreSQL. The application include
 - [Environment variables](#environment-variables)
 - [Core workflows](#core-workflows)
 - [Permissions and access](#permissions-and-access)
+- [Choosing a production host](#choosing-a-production-host)
 - [Production with Docker](#production-with-docker)
+- [Production without Docker](#production-without-docker)
 - [Workers, storage, and backups](#workers-storage-and-backups)
 - [Communications integrations](#communications-integrations)
 - [ProPresenter 7 exports](#propresenter-7-exports)
@@ -252,34 +254,194 @@ Administrators can access every module. Member accounts receive access through m
 
 This allows, for example, a presenter to export one assigned service without receiving permanent access to every service or administrative module.
 
+## Choosing a production host
+
+ChurchAdmin needs a running backend, a database, and persistent file storage. It cannot run on every hosting plan.
+
+| Hosting capability | Deployment path |
+| --- | --- |
+| Linux server with Docker Compose and control over ports 80/443 | Use [Production with Docker](#production-with-docker). This is the most complete included stack. |
+| Always-on Node.js process, PostgreSQL, persistent disk, and an HTTPS proxy | Use [Production without Docker](#production-without-docker). Manage restarts, workers, and backups yourself. |
+| Shared hosting with Node.js, MySQL 8, persistent disk, and HTTPS | Use the [MySQL package guide](deployment/SHARED_HOSTING.md). Confirm runtime and native dependency compatibility first. |
+| PHP-only, WordPress-only, or static file hosting | Cannot run the ChurchAdmin backend. |
+| Serverless functions, temporary disk, or processes that sleep when idle | Requires infrastructure/code changes for persistent media and reliable background jobs. There is no complete deployment recipe for this configuration in this repository. |
+
+Start with one web instance and one worker per queue on one server. Multiple web instances require additional coordination and shared storage; this guide does not configure that topology. Each church should use its own deployment, database, secrets, and storage.
+
 ## Production with Docker
 
-The included stack runs PostgreSQL, the Next.js application, export and communications workers, daily backups, and Caddy HTTPS.
+The included stack runs PostgreSQL 16, the Next.js application, dedicated export and communications workers, scheduled backups, and Caddy HTTPS. Run the following commands on the server, from the repository root. For updates, recovery, proxy settings, and managed Node.js hosting, see the [production deployment guide](deployment/PRODUCTION.md).
 
-1. Point a public DNS record at the server.
-2. Ensure inbound ports 80 and 443 reach the server.
-3. Copy and edit the environment file:
+### 1. Prepare the server and domain
+
+Use a Linux server with Git, Docker Engine, and the Docker Compose v2 plugin installed. Confirm `docker --version` and `docker compose version` work for the deployment user. Ensure enough disk space for the database, uploads, exports, backups, and image builds; storage and memory needs depend on your media and export workload.
+
+Point the domain's DNS A record at the server's public IPv4 address. Only add an AAAA record if IPv6 also reaches this server. Allow inbound TCP ports 80 and 443 through the server and hosting-provider firewalls. These ports must be available for Caddy. Keep database port 5432 and application port 3000 private; Compose does not publish them.
+
+```bash
+git clone https://github.com/dgnfunk/churchadmin.git
+cd churchadmin
+cp .env.example .env
+chmod 600 .env
+```
+
+### 2. Configure this installation
+
+Edit `.env` with a text editor. Set:
+
+- `PUBLIC_HOST=admin.your-church.example` (hostname only) and `PUBLIC_APP_URL=https://admin.your-church.example` (HTTPS origin, no path suffix).
+- `POSTGRES_PASSWORD`, `PASSWORD_SECRET`, and `ATTENDEE_SESSION_SECRET` to different random values. Run `openssl rand -hex 32` separately for each. Hex avoids database URL escaping issues.
+- `CHURCH_SLUG=grace-community` if using the included demo initializer below. Setting a different slug does not create a church.
+- `SEED_ADMIN_PASSWORD` and `SEED_MEMBER_PASSWORD` to strong, different passwords if initializing the demo.
+- `SOCIAL_CREDENTIALS_KEY` to a separate random value if saving social accounts.
+- `BACKUP_STORAGE_PATH` to a persistent backup directory, preferably on a separate disk. Keep an off-server copy as well.
+
+Compose supplies its own internal `DATABASE_URL` and storage paths; the localhost URL and worker flags in `.env` do not override those container settings. Set SMTP values if using email. Never share your real `.env` with other installers.
+
+### 3. Build and start
+
+```bash
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100 app export-worker communications-worker caddy
+```
+
+The app applies committed Prisma migrations before starting. Workers wait for the app's health check before starting. Caddy obtains and renews the TLS certificate when DNS and ports are correct. The first build and startup can take several minutes.
+
+### 4. Initialize the church and first login
+
+**Current PostgreSQL limitation:** migrations create tables, but there is no clean production church/admin initializer or signup screen. The included initializer creates the demonstration church, sample congregation, and demo accounts. Use it only in a fresh database for evaluation:
+
+```bash
+docker compose exec app npm run db:seed:demo
+```
+
+Open `https://YOUR_PUBLIC_HOST/login`, sign in as `elena@grace.example` with `SEED_ADMIN_PASSWORD`, then follow the [first-time workflow](#recommended-first-time-workflow).
+
+For a real congregation starting with no sample data, the [MySQL hosting package](deployment/SHARED_HOSTING.md) already generates a clean church and temporary administrator. The standard PostgreSQL path needs a separate production initializer before it can offer the same experience. Do not treat the demo seed as a production provisioning or upgrade command; rerunning it deletes and recreates the demo church's records.
+
+### 5. Verify before handing over
+
+```bash
+curl --fail --show-error https://YOUR_PUBLIC_HOST/api/health
+```
+
+Expect HTTP 200 and `{"status":"ok"}`. This checks database connectivity and storage access, but not church initialization or worker delivery. Also sign in at `/login`, create a service, upload a small media file, and queue/download an export. Confirm the file remains after restarting the app. If configured, test a controlled communications delivery and its operational email notifications. Complete and copy a backup off-server, and test recovery in an isolated installation.
+
+## Production without Docker
+
+Docker is optional. The host must still support a persistent Node.js application, a compatible database, HTTPS, and writable storage that survives deployments. Choose the path that matches your database:
+
+- **Node.js + PostgreSQL:** deploy from the source repository using Option A below.
+- **Node.js + MySQL 8:** use the prepared hosting package in Option B below, including when the hosting panel has no SSH access.
+- **PHP/WordPress/static hosting without Node.js:** the full application cannot run on that plan. Ask the provider whether an always-on Node.js application is available.
+
+### Option A: Node.js hosting with PostgreSQL
+
+#### 1. Confirm the hosting requirements
+
+Use Node.js 22 and npm. Confirm that the provider lets you run a persistent web process, set environment variables, connect a domain with HTTPS, and keep private uploaded files on persistent storage. If using SSH, check:
+
+```bash
+node --version
+npm --version
+```
+
+The application must restart after failures and server reboots. For a managed hosting panel, confirm that it offers an application start/restart control. For a server you administer, use the [systemd service example](deployment/PRODUCTION.md#run-and-supervise-processes).
+
+#### 2. Install the source and create a database
+
+Run these commands in the directory assigned to your Node.js application:
+
+```bash
+git clone https://github.com/dgnfunk/churchadmin.git
+cd churchadmin
+npm ci
+cp .env.example .env
+chmod 600 .env
+mkdir -p storage/media storage/exports
+```
+
+Create an empty PostgreSQL database and a user with permission to create and update its tables, using the hosting panel or database administrator. Keep the connection URL for the next step. Install/build on the target platform so Prisma and Sharp use compatible native dependencies.
+
+#### 3. Set environment variables
+
+Edit `.env`, or enter its values in the hosting panel's environment manager. At minimum, configure:
+
+| Variable | Value for this deployment |
+| --- | --- |
+| `DATABASE_URL` | Your PostgreSQL connection URL, with TLS settings if required by the database host. |
+| `PUBLIC_APP_URL` | Your public HTTPS origin, for example `https://admin.your-church.example`, without a path suffix. |
+| `PASSWORD_SECRET` | A new random value; generate with `openssl rand -hex 32`. |
+| `ATTENDEE_SESSION_SECRET` | A different random value, generated separately. |
+| `CHURCH_SLUG` | The existing church's slug, or `grace-community` for the fresh demo installation below. |
+| `MEDIA_STORAGE_PATH` | An absolute persistent directory, such as `/srv/churchadmin/storage/media`. Replace this with your actual application/storage directory. |
+| `EXPORT_STORAGE_PATH` | An absolute persistent directory, such as `/srv/churchadmin/storage/exports`. |
+| `EXPORT_WORKER_IN_APP` | `true` for a single persistent web process. |
+| `COMMUNICATIONS_WORKER_IN_APP` | `true` for a single persistent web process. |
+
+Give the application user read/write access to both storage directories. Keep them outside disposable release directories. Configure optional SMTP and social integration settings as needed. `PUBLIC_HOST`, `POSTGRES_PASSWORD`, and the automatic backup service belong to the Compose setup and are not used by this path.
+
+#### 4. Apply migrations and build
+
+```bash
+npm run db:generate
+NODE_ENV=production npx prisma migrate deploy
+NODE_ENV=production npm run build
+cp -r public .next/standalone/
+cp -r .next/static .next/standalone/.next/
+```
+
+The asset-copy commands are required by the standalone server. Keep the full checkout and dependencies for future migrations and maintenance. Supply the required environment to both build and runtime.
+
+#### 5. Prepare the first account
+
+Migrations create tables, but **the PostgreSQL path currently has no clean church/admin setup command**. For a fresh evaluation database only, set `SEED_ADMIN_PASSWORD` and `SEED_MEMBER_PASSWORD`, keep `CHURCH_SLUG=grace-community`, and run:
+
+```bash
+NODE_ENV=production npm run db:seed:demo
+```
+
+This creates sample data and demo accounts. Never run it on an installation containing real congregation data. For an empty production church, a separate initializer is still needed; the MySQL package in Option B already provides clean initial records.
+
+#### 6. Configure the application startup and HTTPS
+
+For an SSH-managed server, the web command from the repository root is:
+
+```bash
+NODE_ENV=production HOSTNAME=127.0.0.1 PORT=3000 node --env-file=.env .next/standalone/server.js
+```
+
+Configure that command under a process supervisor using your application's working directory; running it in a terminal is only a startup check. Route the domain's HTTPS reverse proxy to `127.0.0.1:3000`, preserve the public host/forwarded HTTPS headers, and keep port 3000 private.
+
+For a managed Node.js panel, set the startup file to `.next/standalone/server.js`, configure `NODE_ENV=production`, and enter the variables from step 3 in the panel. Use the panel's assigned `PORT` and network binding requirements. A startup filename alone does not apply the `--env-file` flag, so configure the process environment explicitly. See the [hosting-panel checklist](deployment/PRODUCTION.md#managed-nodejs-panel-checklist) for the settings to confirm.
+
+With both in-app worker flags set to `true`, no separate worker commands are needed. Keep the web process running continuously so jobs can execute. If the provider supports dedicated worker processes, use the [worker setup](deployment/PRODUCTION.md#run-and-supervise-processes) and set those flags to `false`.
+
+#### 7. Verify and configure backups
+
+Open `https://YOUR_DOMAIN/api/health` and expect HTTP 200 with `{"status":"ok"}`. Sign in at `https://YOUR_DOMAIN/login`; for the demo, use `elena@grace.example` with `SEED_ADMIN_PASSWORD`. Test a media upload and an export, then restart the application and confirm the uploaded file remains available.
+
+Schedule PostgreSQL backups through your database provider or server tools, back up both storage directories, and securely back up the environment/secrets separately. Keep an off-server copy and test restoration. The repository's Docker backup/restore scripts do not apply to this deployment. Follow the [update procedure](deployment/PRODUCTION.md#updating-an-existing-installation) for later releases.
+
+### Option B: Node.js hosting with MySQL, including panels without SSH
+
+1. Confirm the hosting panel supports persistent Node.js 22, MySQL 8, HTTPS, environment variables, and writable persistent storage. The package currently targets Linux x64/glibc with compatible Prisma/OpenSSL libraries; check the [compatibility requirements](deployment/SHARED_HOSTING.md).
+2. On the computer preparing the package, run `npm ci`, then generate a separate package for the installation:
 
    ```bash
-   cp .env.example .env
+   PACKAGE_CHURCH_NAME="My Church" \
+   PACKAGE_CHURCH_SLUG="my-church" \
+   PACKAGE_ADMIN_EMAIL="admin@your-church.example" \
+   npm run package:mysql
    ```
 
-4. Set at least `POSTGRES_PASSWORD`, `PASSWORD_SECRET`, `ATTENDEE_SESSION_SECRET`, `PUBLIC_HOST`, `PUBLIC_APP_URL`, `SEED_ADMIN_PASSWORD`, and `SEED_MEMBER_PASSWORD`.
-5. Start the stack:
+3. Transfer `dist-hosting/churchadmin-mysql.zip` privately and extract it into the panel's Node.js application directory. Create a new empty MySQL database and import `mysql-schema.sql`, followed by `mysql-initial-data.sql`, using phpMyAdmin or the panel's database tool.
+4. Set the startup file to `server.js` and `NODE_ENV=production`. Copy the package's `.env.example` values into the panel's environment manager, replacing `DATABASE_URL` and `PUBLIC_APP_URL`. Preserve the generated `PASSWORD_SECRET` and `CHURCH_SLUG`, which match the initial account and church records. Keep `storage/media` and `storage/exports` writable and persistent. Start/restart the application through the panel and enable HTTPS for its domain.
+5. Open `/login`, use the temporary credentials in `INSTALLATION-CREDENTIALS.txt`, and change the password when prompted. Remove that credentials file from the hosting and working copies. Verify `/api/health`, an upload, an export, and persistence after restart. Configure MySQL/file backups through the hosting provider.
 
-   ```bash
-   docker compose up -d --build
-   ```
-
-6. For a new demonstration installation only, seed the demo church:
-
-   ```bash
-   docker compose exec app npm run db:seed:demo
-   ```
-
-7. Open `https://YOUR_PUBLIC_HOST`, sign in, and verify `https://YOUR_PUBLIC_HOST/api/health`.
-
-Caddy obtains and renews the TLS certificate. The app container automatically applies pending Prisma migrations when it starts. Docker Compose disables in-process workers and runs dedicated `export-worker` and `communications-worker` services instead.
+The [complete shared-hosting guide](deployment/SHARED_HOSTING.md) includes compatibility checks, installation details, backup requirements, and update limitations. The PostgreSQL migrations cannot be applied to the MySQL package. PHP and MySQL support without Node.js is insufficient.
 
 ## Workers, storage, and backups
 
@@ -294,23 +456,26 @@ npm run worker:communications
 
 Both processes poll for work every three seconds. Do not run duplicate worker modes accidentally: set the corresponding `*_WORKER_IN_APP` variable to `false` when using a dedicated process.
 
+Outside Docker, worker commands do not automatically load `.env` through Next.js. Export their environment through your process manager, or use the explicit Node.js 22 environment-loading commands in the [deployment guide](deployment/PRODUCTION.md#nodejs-without-docker).
+
 ### Backups
 
-The Docker backup service runs every day at 02:00 server time. Each backup contains:
+The Docker backup service targets 02:00 in the backup container's time zone (UTC by default), beginning on the next calendar day after startup. Each scheduled backup contains:
 
 - A PostgreSQL dump.
 - Uploaded media.
 - Generated exports.
 - SHA-256 checksums.
 
-Manual backup and restore:
+Manual backup (run from the repository root):
 
 ```bash
 ./scripts/backup.sh
-./scripts/restore.sh ./backups/YYYYMMDD-HHMMSS
 ```
 
-Restoring replaces database objects and stored files. Verify the chosen backup and its checksums before restoring, and stop writes to the application during recovery.
+The manual script defaults to `./backups`, independently of `BACKUP_STORAGE_PATH`; pass a destination as its first argument to use another directory. Manual backups do not generate checksums. These scripts and the scheduled backup service are for Docker/PostgreSQL only.
+
+`restore.sh` replaces database objects and extracts file archives over the current directories; it does not remove extra files or verify checksums. Follow the [backup and recovery procedure](deployment/PRODUCTION.md#backups-and-recovery) to stop all writers and move existing media/exports aside before restoring. Keep the deployment's secrets in a secure separate backup: they are not included in the database/media archives.
 
 ## Communications integrations
 

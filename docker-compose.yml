@@ -39,6 +39,11 @@ services:
       META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
       META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
       SOCIAL_CREDENTIALS_KEY: ${SOCIAL_CREDENTIALS_KEY}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM: ${SMTP_FROM}
     volumes:
       - ./data/media:/data/media
       - ./data/exports:/data/exports
@@ -52,7 +57,7 @@ services:
     build: .
     restart: unless-stopped
     depends_on:
-      db:
+      app:
         condition: service_healthy
     command: ["npm", "run", "worker:exports"]
     environment:
@@ -69,11 +74,12 @@ services:
     build: .
     restart: unless-stopped
     depends_on:
-      db:
+      app:
         condition: service_healthy
     command: ["npm", "run", "worker:communications"]
     environment:
       DATABASE_URL: postgresql://churchadmin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/churchadmin?schema=public
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL}
       SOCIAL_CREDENTIALS_KEY: ${SOCIAL_CREDENTIALS_KEY}
       META_APP_SECRET: ${META_APP_SECRET}
       META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
@@ -87,7 +93,7 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     depends_on:
-      db:
+      app:
         condition: service_healthy
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
